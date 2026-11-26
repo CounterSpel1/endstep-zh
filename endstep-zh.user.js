@@ -2,7 +2,7 @@
 // @name         Endstep 汉化
 // @name:en      Endstep Chinese Localization
 // @namespace    https://endstep.cc/
-// @version      1.3.3
+// @version      1.3.4
 // @description  把 endstep.cc 的界面与卡面文字汉化为简体中文
 // @match        https://endstep.cc/*
 // @match        https://*.endstep.cc/*
@@ -5535,7 +5535,7 @@
     return null;
   }
 
-  try { window.__eszhVer = '1.3.3'; } catch (e) {}
+  try { window.__eszhVer = '1.3.4'; } catch (e) {}
 
   /* ------------------- 卡面词典（mtgch 中文 / Scryfall 兜底） ------------------- */
 
@@ -5696,6 +5696,7 @@
     } catch (e) {}
     if (hit) {
       CARD_MEM[name] = hit;
+      if (DBG.on) { DBG.hit++; DBG.last = name + '（缓存）'; DBG.show(); }
       return Promise.resolve(hit);
     }
 
@@ -6039,6 +6040,14 @@
           var hit = findFaceNameNode(bz, faces);
           var bodyTxt = oe ? oe.textContent : '';
           var f = pickFace(faces, typeTxt, nn.nodeValue, bodyTxt);
+          if (DBG.on) {
+            DBG.last = '结构 ' + key + ' ｜面 ' + (f ? faces.indexOf(f) : '-') + '/' + faces.length +
+              ' ｜title=' + String(hit ? hit.node.nodeValue : nn.nodeValue).slice(0, 16) +
+              ' ｜type=' + String(typeTxt).slice(0, 20) +
+              ' ｜正文=' + String(bodyTxt).replace(/\s+/g, ' ').slice(0, 18) +
+              ' → ' + (f ? f.zh : '未选');
+            DBG.show();
+          }
           if (!f || !f.zh) return;
           if (hit && hit.node.nodeValue !== f.zh) hit.node.nodeValue = f.zh;
           if (nn.nodeValue !== f.zh) nn.nodeValue = f.zh;
