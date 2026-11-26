@@ -2,7 +2,7 @@
 // @name         Endstep 汉化
 // @name:en      Endstep Chinese Localization
 // @namespace    https://endstep.cc/
-// @version      1.1.0
+// @version      1.2.0
 // @description  把 endstep.cc 的界面与卡面文字汉化为简体中文
 // @match        https://endstep.cc/*
 // @match        https://*.endstep.cc/*
@@ -5470,7 +5470,7 @@
     return null;
   }
 
-  try { window.__eszhVer = '1.1.0'; } catch (e) {}
+  try { window.__eszhVer = '1.2.0'; } catch (e) {}
 
   /* ------------------- 卡面词典（mtgch 中文 / Scryfall 兜底） ------------------- */
 
@@ -5703,25 +5703,56 @@
       .replace(/\boc([A-Z0-9])\b/g, '{$1}');
   }
 
-  // 把中文逐段写回；{T}{G} 这类符号复用原文已渲染的符号节点（按顺序对应）
+  /* 法术力符号：不依赖 mana-font，也不克隆原文节点——
+   * 站点面板本身不解析 {X}，没有符号元素可用，所以自己画一个小圆徽章。
+   * 纯内联样式，任何环境都能显示，不会出现字体没加载变成空白/方框。 */
+  var MS_COLOR = {
+    W: ['#F6EBD0', '#4A3A1C'], U: ['#B9DCF2', '#123A5C'], B: ['#45403C', '#F2E9DA'],
+    R: ['#F0A98C', '#4A1B0C'], G: ['#A8C9A0', '#173404'], C: ['#CFC9BC', '#2C2C2A'],
+    S: ['#D7E6F2', '#2C3E50'], E: ['#F2D07A', '#4A3506'], X: ['#CFC9BC', '#2C2C2A'],
+    Y: ['#CFC9BC', '#2C2C2A'], Z: ['#CFC9BC', '#2C2C2A'], T: ['#E7DCC0', '#3A2C0E'],
+    Q: ['#E7DCC0', '#3A2C0E'], P: ['#D9C9A8', '#3A2C0E'], H: ['#D9C9A8', '#3A2C0E'],
+    A: ['#CFC9BC', '#2C2C2A'], L: ['#F2D07A', '#4A3506'], D: ['#CFC9BC', '#2C2C2A']
+  };
+
+  function symEl(code) {
+    var raw = String(code).replace(/[{}]/g, '').trim();
+    var parts = raw.split('/');
+    var head = (parts[0] || '').toUpperCase();
+    var pair = null;
+    if (parts.length === 2) {
+      var c = MS_COLOR[head] || MS_COLOR.C;
+      pair = [c[0], (MS_COLOR[(parts[1] || '').toUpperCase()] || MS_COLOR.C)[0]];
+    }
+    var col = pair || MS_COLOR[head] || MS_COLOR.C;
+    var label = raw.toUpperCase().replace(/\//g, '');
+
+    var el = document.createElement('span');
+    el.className = 'eszh-ms';
+    el.textContent = label;
+    el.setAttribute('aria-label', '{' + raw + '}');
+    el.style.cssText =
+      'display:inline-flex;align-items:center;justify-content:center;' +
+      'min-width:1.2em;height:1.2em;padding:0 .18em;box-sizing:border-box;' +
+      'border-radius:50%;font-size:.8em;font-weight:700;line-height:1;' +
+      'vertical-align:-.14em;margin:0 .1em;letter-spacing:-.02em;' +
+      (pair
+        ? 'background:linear-gradient(135deg,' + pair[0] + ' 50%,' + pair[1] + ' 50%);color:#2C2C2A;'
+        : 'background:' + col[0] + ';color:' + col[1] + ';') +
+      'box-shadow:inset 0 0 0 1px rgba(0,0,0,.28)';
+    return el;
+  }
+
+  // 把中文逐段写回，{T}{G} 一律渲染成上面那种徽章
   function setRichText(el, text) {
     text = fixText(text);
-    var syms = [];
-    try {
-      syms = Array.prototype.slice.call(
-        el.querySelectorAll('svg, img, [class*="mana"], [class*="sym"], [class*="ms-"]')
-      );
-    } catch (e) {}
-
     var frag = document.createDocumentFragment();
-    var idx = 0;
     var parts = text.split(/(\{[^}]{1,16}\})/);
     for (var i = 0; i < parts.length; i++) {
       var seg = parts[i];
       if (!seg) continue;
-      if (/^\{[^}]{1,16}\}$/.test(seg) && syms[idx]) {
-        frag.appendChild(syms[idx].cloneNode(true));
-        idx++;
+      if (/^\{[^}]{1,16}\}$/.test(seg)) {
+        frag.appendChild(symEl(seg.slice(1, -1)));
         continue;
       }
       var lines = seg.split('\n');
@@ -5730,7 +5761,6 @@
         if (lines[k]) frag.appendChild(document.createTextNode(lines[k]));
       }
     }
-
     el.textContent = '';
     el.appendChild(frag);
   }
