@@ -2,7 +2,7 @@
 // @name         Endstep 汉化
 // @name:en      Endstep Chinese Localization
 // @namespace    https://endstep.cc/
-// @version      1.0.0
+// @version      1.0.1
 // @description  把 endstep.cc 的界面与卡面文字汉化为简体中文
 // @match        https://endstep.cc/*
 // @match        https://*.endstep.cc/*
@@ -5470,7 +5470,7 @@
     return null;
   }
 
-  try { window.__eszhVer = '1.0.0'; } catch (e) {}
+  try { window.__eszhVer = '1.0.1'; } catch (e) {}
 
   /* ------------------- 卡面词典（Scryfall 中文印刷版） ------------------- */
 
@@ -5584,7 +5584,8 @@
           var low = name.toLowerCase();
           for (var i = 0; i < items.length; i++) {
             var it = items[i];
-            if ((it.name || '').toLowerCase() !== low) continue;
+            var iname = (it.name || '').toLowerCase();
+            if (iname !== low && iname.indexOf(low + ' // ') !== 0) continue;
             var zh = it.zhs_name || it.atomic_translated_name;
             if (!zh) continue;
             return [
@@ -5645,41 +5646,45 @@
       .replace(/\\r/g, '')
       .replace(/\\t/g, ' ')
       .replace(/\\'/g, "'")
-      .replace(/\\"/g, '"');
+      .replace(/\\"/g, '"')
+      .replace(/\boc([A-Z0-9])\b/g, '{$1}');
   }
 
-  // 把中文逐段写回，遇到 {W} 这类符号时复用原本渲染好的符号节点（按顺序一一对应）
-  // 纯文本节点写入：带换行时替换成 <br>，否则 HTML 会把换行吞掉
-  function writeInline(node, text) {
-    text = fixText(text);
-    if (text.indexOf('\n') < 0) { node.nodeValue = text; return; }
-    var frag = document.createDocumentFragment();
-    var lines = text.split('\n');
-    for (var i = 0; i < lines.length; i++) {
-      if (i) frag.appendChild(document.createElement('br'));
-      if (lines[i]) frag.appendChild(document.createTextNode(lines[i]));
+  // 法术力符号：站点用的是 mana-font，写法是 <i class="ms ms-t"></i>
+  // 不要克隆原文的符号节点（会带出 o/c 之类的残字），按代码新建才是对的
+  var MS_ALIAS = { '∞': 'inf', '½': 'h', '½': 'h' };
+
+  function manaEl(code, tpl) {
+    var raw = String(code).replace(/[{}]/g, '').trim();
+    var key = MS_ALIAS[raw] || raw.toUpperCase().replace(/[\/]/g, '').toLowerCase();
+    var el;
+    if (tpl && tpl.cloneNode) {
+      el = tpl.cloneNode(false);
+      var cls = tpl.className || 'ms';
+      var swapped = cls.replace(/\bms-[a-z0-9-]+\b/i, 'ms-' + key);
+      el.className = swapped === cls && cls.indexOf('ms-' + key) < 0 ? cls + ' ms-' + key : swapped;
+    } else {
+      el = document.createElement('i');
+      el.className = 'ms ms-' + key + ' leading-none';
+      el.setAttribute('aria-hidden', 'true');
     }
-    if (node.parentNode) node.parentNode.replaceChild(frag, node);
+    el.textContent = '';
+    return el;
   }
 
+  // 把中文逐段写回，{T}{G} 这类符号一律按 mana-font 重建
   function setRichText(el, text) {
     text = fixText(text);
-    var syms = [];
-    try {
-      syms = Array.prototype.slice.call(
-        el.querySelectorAll('svg, img, [class*="mana"], [class*="sym"]')
-      );
-    } catch (e) {}
+    var tpl = null;
+    try { tpl = el.querySelector('[class*="ms-"], [class*="mana"]'); } catch (e) {}
 
     var frag = document.createDocumentFragment();
-    var idx = 0;
     var parts = text.split(/(\{[^}]{1,16}\})/);
     for (var i = 0; i < parts.length; i++) {
       var seg = parts[i];
       if (!seg) continue;
-      if (/^\{[^}]{1,16}\}$/.test(seg) && syms[idx]) {
-        frag.appendChild(syms[idx].cloneNode(true));
-        idx++;
+      if (/^\{[^}]{1,16}\}$/.test(seg)) {
+        frag.appendChild(manaEl(seg.slice(1, -1), tpl));
         continue;
       }
       var lines = seg.split('\n');
@@ -5703,7 +5708,16 @@
     box.setAttribute(CARD_MARK, '1');
 
     cardZh(en).then(function (z) {
-      if (!z) return;
+      if (!z) {
+        var tries = parseInt(box.getAttribute('data-eszh-try') || '0', 10);
+        if (tries < 2) {
+          setTimeout(function () {
+            box.removeAttribute(CARD_MARK);
+            box.setAttribute('data-eszh-try', String(tries + 1));
+          }, 1500);
+        }
+        return;
+      }
       if (nameEl.parentNode) nameEl.textContent = z[0];
       var tl = box.querySelector('[class*="es-ct-tl"]');
       if (tl && z[1]) tl.textContent = z[1];
@@ -5716,7 +5730,7 @@
 
   /* ---- 结构启发：不认类名，靠「类型行」这个排版特征定位卡面 ---- */
 
-  var TYPE_RE = /^(Instant|Sorcery|Enchantment|Artifact|Creature|Land|Planeswalker|Battle|Tribal|Conspiracy|Scheme|Vanguard|Phenomenon|Plane|Dungeon)\b/i;
+  var TYPE_RE = /^(?:(?:Basic|Snow|Legendary|World|Ongoing|Elite|Host|Token)\s+)*(Instant|Sorcery|Enchantment|Artifact|Creature|Land|Planeswalker|Battle|Tribal|Conspiracy|Scheme|Vanguard|Phenomenon|Plane|Dungeon)\b/i;
   var CARD_SEEN = typeof WeakSet === 'function' ? new WeakSet() : null;
 
   function isTypeLine(text) {
