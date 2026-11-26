@@ -2,7 +2,7 @@
 // @name         Endstep 汉化
 // @name:en      Endstep Chinese Localization
 // @namespace    https://endstep.cc/
-// @version      1.3.1
+// @version      1.3.2
 // @description  把 endstep.cc 的界面与卡面文字汉化为简体中文
 // @match        https://endstep.cc/*
 // @match        https://*.endstep.cc/*
@@ -5535,7 +5535,7 @@
     return null;
   }
 
-  try { window.__eszhVer = '1.3.1'; } catch (e) {}
+  try { window.__eszhVer = '1.3.2'; } catch (e) {}
 
   /* ------------------- 卡面词典（mtgch 中文 / Scryfall 兜底） ------------------- */
 
@@ -5642,7 +5642,8 @@
       zh: obj.zhs_name || obj.atomic_translated_name || obj.printed_name || '',
       ztype: obj.zhs_type_line || obj.atomic_translated_type || obj.printed_type_line || '',
       ztext: obj.zhs_text || obj.atomic_translated_text || obj.printed_text || '',
-      zflavor: obj.zhs_flavor_text || obj.atomic_translated_flavor_text || ''
+      zflavor: obj.zhs_flavor_text || obj.atomic_translated_flavor_text || '',
+      enText: String(obj.oracle_text || '').replace(/\s+/g, ' ').trim()
     };
   }
 
@@ -5738,9 +5739,23 @@
   }
 
   // 按页面上的类型行挑出「当前这一面」
-  function pickFace(faces, typeText, nameText) {
+  function pickFace(faces, typeText, nameText, bodyText) {
     if (!faces || !faces.length) return null;
     if (faces.length === 1) return faces[0];
+
+    // ① 用页面上的英文规则文本前缀比对，最可靠
+    var body = String(bodyText || '').replace(/\s+/g, ' ').trim().toLowerCase();
+    if (body.length >= 12) {
+      var bestFace = null, bestLen = 0;
+      for (var b = 0; b < faces.length; b++) {
+        var et = (faces[b].enText || '').toLowerCase();
+        if (!et) continue;
+        var n = 0;
+        while (n < et.length && n < body.length && et.charAt(n) === body.charAt(n)) n++;
+        if (n > bestLen && n >= 8) { bestLen = n; bestFace = faces[b]; }
+      }
+      if (bestFace && bestFace.zh) return bestFace;
+    }
     var want = normType(typeText);
     if (want) {
       for (var i = 0; i < faces.length; i++) {
@@ -5877,6 +5892,10 @@
       if (!(t in idxBy)) continue;
       var host = nodes[k].parentNode;
       if (!host || host.nodeType !== 1) host = box;
+      // 跳过不可见的节点（隐藏的正面名、离屏副本），否则会误判成另一面
+      try {
+        if (host.getClientRects && host.getClientRects().length === 0) continue;
+      } catch (e) {}
       var size = 0;
       try { size = parseFloat(window.getComputedStyle(host).fontSize) || 0; } catch (e) {}
       if (size > bestSize) { best = nodes[k]; bestSize = size; bestIdx = idxBy[t]; }
@@ -5908,7 +5927,16 @@
         return;
       }
       var hit = findFaceNameNode(box, faces);
-      var f = hit ? faces[hit.index] : pickFace(faces, tlEl && tlEl.textContent, nameEl.textContent);
+      var bodyTxt = oeEl ? oeEl.textContent : '';
+      var f = hit ? faces[hit.index] : pickFace(faces, tlEl && tlEl.textContent, nameEl.textContent, bodyTxt);
+      if (DBG.on) {
+        DBG.last = '卡面 ' + en + ' ｜面 ' + (hit ? hit.index : '-') + '/' + faces.length +
+          ' ｜title=' + String(hit ? hit.node.nodeValue : nameEl.textContent).slice(0, 18) +
+          ' ｜type=' + String(tlEl ? tlEl.textContent : '-').slice(0, 22) +
+          ' ｜正文=' + String(bodyTxt).replace(/\s+/g, ' ').slice(0, 22) +
+          ' → ' + (f ? f.zh : '未选');
+        DBG.show();
+      }
       if (!f || !f.zh) return;
       if (hit) { hit.node.nodeValue = f.zh; }
       else if (nameEl.parentNode) nameEl.textContent = f.zh;
@@ -5992,7 +6020,8 @@
         cardZh(key).then(function (faces) {
           if (!faces) return;
           var hit = findFaceNameNode(bz, faces);
-          var f = hit ? faces[hit.index] : pickFace(faces, typeTxt, nn.nodeValue);
+          var bodyTxt = oe ? oe.textContent : '';
+          var f = hit ? faces[hit.index] : pickFace(faces, typeTxt, nn.nodeValue, bodyTxt);
           if (!f || !f.zh) return;
           (hit ? hit.node : nn).nodeValue = f.zh;
           if (tl && f.ztype) tl.nodeValue = f.ztype;
