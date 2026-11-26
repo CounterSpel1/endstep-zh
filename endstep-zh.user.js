@@ -2,7 +2,7 @@
 // @name         Endstep 汉化
 // @name:en      Endstep Chinese Localization
 // @namespace    https://endstep.cc/
-// @version      1.3.4
+// @version      1.3.5
 // @description  把 endstep.cc 的界面与卡面文字汉化为简体中文
 // @match        https://endstep.cc/*
 // @match        https://*.endstep.cc/*
@@ -5535,7 +5535,7 @@
     return null;
   }
 
-  try { window.__eszhVer = '1.3.4'; } catch (e) {}
+  try { window.__eszhVer = '1.3.5'; } catch (e) {}
 
   /* ------------------- 卡面词典（mtgch 中文 / Scryfall 兜底） ------------------- */
 
@@ -5973,6 +5973,18 @@
     return out;
   }
 
+  // 标题可能不在同一个容器里（例如类型+正文在子块、标题在外层），
+  // 逐层向上找一个「含可见面名」的祖先来改标题
+  function replaceTitleNear(tn, faces, zhName) {
+    var el = tn.parentNode;
+    for (var up = 0; up < 3 && el && el.nodeType === 1; up++) {
+      var h = findFaceNameNode(el, faces);
+      if (h && h.node.nodeValue !== zhName) { h.node.nodeValue = zhName; return true; }
+      el = el.parentElement;
+    }
+    return false;
+  }
+
   function cardPassHeuristic(root) {
     var nodes = [];
     textNodesIn(root, nodes, 80);
@@ -5992,7 +6004,7 @@
       var inner = [];
       textNodesIn(box, inner, 60);
       var idx = inner.indexOf(tn);
-      if (idx <= 0) continue;
+      if (idx < 0) continue;   // idx===0 也要处理：类型行就是容器第一行时标题在外层
 
       // 卡名只在「类型行的前一个兄弟块」里找，避免抓到另一面的名字
       var nameNode = null;
@@ -6013,6 +6025,24 @@
           var t = inner[k].nodeValue.trim();
           if (t.length && t.length <= 80 && /[A-Za-z]{2}/.test(t) && !/^\{|^\d+\s*\/\s*\d+$/.test(t)) {
             nameNode = inner[k];
+            break;
+          }
+        }
+      }
+      // 标题常常在类型块之外（外层容器里），再往外一层找
+      if (!nameNode) {
+        var outer = box.parentElement || box;
+        var cands = [];
+        textNodesIn(outer, cands, 80);
+        for (var c = cands.length - 1; c >= 0; c--) {
+          var cn2 = cands[c];
+          if (cn2 === tn) continue;
+          if (!(cn2.compareDocumentPosition(tn) & Node.DOCUMENT_POSITION_FOLLOWING)) continue;
+          var ct = cn2.nodeValue.trim();
+          if (ct.length && ct.length <= 80 && /[A-Za-z]{2}/.test(ct) &&
+              !/^\{|^\d+\s*\/\s*\d+$/.test(ct) && !isTypeLine(ct)) {
+            nameNode = cn2;
+            box = outer;
             break;
           }
         }
@@ -6049,8 +6079,11 @@
             DBG.show();
           }
           if (!f || !f.zh) return;
-          if (hit && hit.node.nodeValue !== f.zh) hit.node.nodeValue = f.zh;
-          if (nn.nodeValue !== f.zh) nn.nodeValue = f.zh;
+          var titled = replaceTitleNear(tl, faces, f.zh);
+          if (!titled) {
+            if (hit && hit.node.nodeValue !== f.zh) hit.node.nodeValue = f.zh;
+            if (nn.nodeValue !== f.zh) nn.nodeValue = f.zh;
+          }
           if (tl && f.ztype) tl.nodeValue = f.ztype;
           if (oe && f.ztext) setRichText(oe, f.ztext);
         });
