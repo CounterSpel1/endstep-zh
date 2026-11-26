@@ -2,7 +2,7 @@
 // @name         Endstep 汉化
 // @name:en      Endstep Chinese Localization
 // @namespace    https://endstep.cc/
-// @version      1.0.2
+// @version      1.1.0
 // @description  把 endstep.cc 的界面与卡面文字汉化为简体中文
 // @match        https://endstep.cc/*
 // @match        https://*.endstep.cc/*
@@ -5470,20 +5470,20 @@
     return null;
   }
 
-  try { window.__eszhVer = '1.0.2'; } catch (e) {}
+  try { window.__eszhVer = '1.1.0'; } catch (e) {}
 
-  /* ------------------- 卡面词典（Scryfall 中文印刷版） ------------------- */
+  /* ------------------- 卡面词典（mtgch 中文 / Scryfall 兜底） ------------------- */
 
   /*
-   * 卡面文字不是界面文案，是卡牌数据。
-   * 站点的 CSP 只放行 'self' 与 api.scryfall.com，所以这里走 Scryfall：
-   *   /cards/search?q=!"英文名" lang:zhs&unique=prints
-   * 返回的中文印刷版带 printed_name / printed_type_line / printed_text。
-   * 查不到中文印刷（老牌、特卡）就保持英文，绝不机翻。
+   * 卡面文字不是界面文案，是卡牌数据。站点 CSP 只放行 'self' 与 api.scryfall.com，
+   * 所以 mtgch 走 GM_xmlhttpRequest，Scryfall 走普通 fetch 兜底。
+   *
+   * 双面 / 预兆牌要按「当前显示的是哪一面」取值：mtgch 的 other_faces、Scryfall 的
+   * card_faces 都带每面的英文类型行，用它与页面上的类型行比对即可判断。
    */
   var MTGCH_API = 'https://mtgch.com/api/v1/result?q=';
   var SCRY_API = 'https://api.scryfall.com/cards/search?unique=prints&q=';
-  var CARD_KEY = 'eszh:card2:';
+  var CARD_KEY = 'eszh:card3:';
   var CARD_MEM = Object.create(null);
   var CARD_PENDING = Object.create(null);
   var CARD_MARK = 'data-eszh-card';
@@ -5519,7 +5519,7 @@
     }
   };
 
-  // 跨域：页面 CSP 只放行 scryfall，mtgch 必须走 GM_xmlhttpRequest
+  // 跨域：mtgch 只能走 GM_xmlhttpRequest
   function gmGet(url) {
     return new Promise(function (resolve, reject) {
       var fn = (typeof GM_xmlhttpRequest === 'function') ? GM_xmlhttpRequest
@@ -5540,7 +5540,7 @@
     });
   }
 
-  // 串行 + 间隔，避免一屏卡牌把接口打满（Scryfall 限 10 次/秒）
+  // 串行 + 间隔，避免一屏卡牌把接口打满
   var CARD_QUEUE = [];
   var CARD_RUNNING = false;
   function cardPump() {
@@ -5561,6 +5561,64 @@
     });
   }
 
+  function normType(s) {
+    return String(s == null ? '' : s)
+      .toLowerCase()
+      .replace(/[\u2014\u2013-]/g, '-')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  // 统一成 [{en, type, zh, ztype, ztext, zflavor}, ...]，正面在前
+  function faceFrom(obj, tag) {
+    return {
+      en: obj.face_name || obj.name || '',
+      type: obj.type_line || '',
+      zh: obj.zhs_name || obj.atomic_translated_name || obj.printed_name || '',
+      ztype: obj.zhs_type_line || obj.atomic_translated_type || obj.printed_type_line || '',
+      ztext: obj.zhs_text || obj.atomic_translated_text || obj.printed_text || '',
+      zflavor: obj.zhs_flavor_text || obj.atomic_translated_flavor_text || ''
+    };
+  }
+
+  function facesFromMtgch(j, name) {
+    var items = (j && j.items) || [];
+    var low = name.toLowerCase();
+    for (var i = 0; i < items.length; i++) {
+      var it = items[i];
+      var iname = (it.name || '').toLowerCase();
+      var fname = (it.face_name || '').toLowerCase();
+      if (iname !== low && iname.indexOf(low + ' // ') !== 0 && fname !== low) {
+        // 也可能是另一面名命中
+        var others = it.other_faces || [];
+        var ok = false;
+        for (var q = 0; q < others.length; q++) {
+          if ((others[q].face_name || '').toLowerCase() === low) ok = true;
+        }
+        if (!ok) continue;
+      }
+      var list = [it].concat(it.other_faces || []);
+      var out = [];
+      for (var k = 0; k < list.length; k++) out.push(faceFrom(list[k]));
+      if (out.length) return out;
+    }
+    return null;
+  }
+
+  function facesFromScryfall(j) {
+    var items = (j && j.data) || [];
+    for (var i = 0; i < items.length; i++) {
+      var c = items[i];
+      if (c.card_faces && c.card_faces.length > 1) {
+        var out = [];
+        for (var k = 0; k < c.card_faces.length; k++) out.push(faceFrom(c.card_faces[k]));
+        if (out.some(function (f) { return f.zh; })) return out;
+      }
+      if (c.printed_name) return [faceFrom(c)];
+    }
+    return null;
+  }
+
   function cardZh(name) {
     if (Object.prototype.hasOwnProperty.call(CARD_MEM, name)) return Promise.resolve(CARD_MEM[name]);
     if (CARD_PENDING[name]) return CARD_PENDING[name];
@@ -5579,23 +5637,7 @@
       return queueJob(function () { return gmGet(MTGCH_API + encodeURIComponent(name)); })
         .then(function (r) {
           if (!r.ok) return null;
-          var j = JSON.parse(r.text);
-          var items = (j && j.items) || [];
-          var low = name.toLowerCase();
-          for (var i = 0; i < items.length; i++) {
-            var it = items[i];
-            var iname = (it.name || '').toLowerCase();
-            if (iname !== low && iname.indexOf(low + ' // ') !== 0) continue;
-            var zh = it.zhs_name || it.atomic_translated_name;
-            if (!zh) continue;
-            return [
-              zh,
-              it.zhs_type_line || it.atomic_translated_type || '',
-              it.zhs_text || it.atomic_translated_text || '',
-              it.zhs_flavor_text || it.atomic_translated_flavor_text || ''
-            ];
-          }
-          return null;
+          return facesFromMtgch(JSON.parse(r.text), name);
         });
     }
 
@@ -5603,17 +5645,7 @@
       var q = SCRY_API + encodeURIComponent('!"' + name + '" lang:zhs');
       return queueJob(function () { return fetch(q, { credentials: 'omit' }); })
         .then(function (r) { return r.ok ? r.json() : null; })
-        .then(function (j) {
-          var items = (j && j.data) || [];
-          for (var i = 0; i < items.length; i++) {
-            var c = items[i];
-            var zhName = c.printed_name;
-            if (!zhName && c.card_faces && c.card_faces[0]) zhName = c.card_faces[0].printed_name;
-            if (!zhName) continue;
-            return [zhName, c.printed_type_line || '', c.printed_text || '', ''];
-          }
-          return null;
-        });
+        .then(function (j) { return j ? facesFromScryfall(j) : null; });
     }
 
     var p = fromMtgch()
@@ -5624,22 +5656,43 @@
         return null;
       })
       .then(function (v) {
+        var usable = v && v.some(function (f) { return f.zh; }) ? v : null;
         if (DBG.on) {
-          if (v) DBG.hit++; else DBG.miss++;
-          DBG.last = name + (v ? ' → ' + v[0] : ' → 无中文');
+          if (usable) DBG.hit++; else DBG.miss++;
+          DBG.last = name + (usable ? ' → ' + usable[0].zh + (usable.length > 1 ? '（' + usable.length + ' 面）' : '') : ' → 无中文');
           DBG.show();
         }
-        CARD_MEM[name] = v;
+        CARD_MEM[name] = usable;
         delete CARD_PENDING[name];
-        try { if (v && v[0]) localStorage.setItem(CARD_KEY + name, JSON.stringify(v)); } catch (e) {}
-        return v && v[0] ? v : null;
+        try { if (usable) localStorage.setItem(CARD_KEY + name, JSON.stringify(usable)); } catch (e) {}
+        return usable;
       });
 
     CARD_PENDING[name] = p;
     return p;
   }
 
-  // 接口偶尔把换行转义成字面量「\n」（两个字符），显示前统一还原
+  // 按页面上的类型行挑出「当前这一面」
+  function pickFace(faces, typeText, nameText) {
+    if (!faces || !faces.length) return null;
+    if (faces.length === 1) return faces[0];
+    var want = normType(typeText);
+    if (want) {
+      for (var i = 0; i < faces.length; i++) {
+        if (normType(faces[i].type) === want && faces[i].zh) return faces[i];
+      }
+    }
+    var title = String(nameText || '').trim().toLowerCase();
+    if (title) {
+      for (var j = 0; j < faces.length; j++) {
+        if ((faces[j].en || '').toLowerCase() === title && faces[j].zh) return faces[j];
+      }
+    }
+    for (var k = 0; k < faces.length; k++) if (faces[k].zh) return faces[k];
+    return faces[0];
+  }
+
+  // 接口偶尔把换行转义成字面量「\n」（两个字符），且个别卡把 {T} 存成 ocT
   function fixText(t) {
     return String(t == null ? '' : t)
       .replace(/\\r\\n|\\n/g, '\n')
@@ -5650,7 +5703,7 @@
       .replace(/\boc([A-Z0-9])\b/g, '{$1}');
   }
 
-  // 把中文逐段写回；{T}{G} 这类符号复用原文已渲染好的符号节点（按顺序一一对应）
+  // 把中文逐段写回；{T}{G} 这类符号复用原文已渲染的符号节点（按顺序对应）
   function setRichText(el, text) {
     text = fixText(text);
     var syms = [];
@@ -5682,6 +5735,19 @@
     el.appendChild(frag);
   }
 
+  // 纯文本节点写入：带换行时替换成 <br>
+  function writeInline(node, text) {
+    text = fixText(text);
+    if (text.indexOf('\n') < 0) { node.nodeValue = text; return; }
+    var frag = document.createDocumentFragment();
+    var lines = text.split('\n');
+    for (var i = 0; i < lines.length; i++) {
+      if (i) frag.appendChild(document.createElement('br'));
+      if (lines[i]) frag.appendChild(document.createTextNode(lines[i]));
+    }
+    if (node.parentNode) node.parentNode.replaceChild(frag, node);
+  }
+
   function applyOneCard(box) {
     if (!box || box.getAttribute(CARD_MARK)) return;
     var nameEl = box.querySelector('b');
@@ -5691,8 +5757,11 @@
     if (en.length > 80) return;
     box.setAttribute(CARD_MARK, '1');
 
-    cardZh(en).then(function (z) {
-      if (!z) {
+    var tlEl = box.querySelector('[class*="es-ct-tl"]');
+    var oeEl = box.querySelector('[class*="es-ct-o"]');
+
+    cardZh(en).then(function (faces) {
+      if (!faces) {
         var tries = parseInt(box.getAttribute('data-eszh-try') || '0', 10);
         if (tries < 2) {
           setTimeout(function () {
@@ -5702,13 +5771,13 @@
         }
         return;
       }
-      if (nameEl.parentNode) nameEl.textContent = z[0];
-      var tl = box.querySelector('[class*="es-ct-tl"]');
-      if (tl && z[1]) tl.textContent = z[1];
-      var oe = box.querySelector('[class*="es-ct-o"]');
-      if (oe && z[2]) setRichText(oe, z[2]);
+      var f = pickFace(faces, tlEl && tlEl.textContent, nameEl.textContent);
+      if (!f || !f.zh) return;
+      if (nameEl.parentNode) nameEl.textContent = f.zh;
+      if (tlEl && f.ztype) tlEl.textContent = f.ztype;
+      if (oeEl && f.ztext) setRichText(oeEl, f.ztext);
       var fhs = box.querySelectorAll('[class*="es-ct-fh"]');
-      if (fhs.length > 1 && z[3]) fhs[fhs.length - 1].textContent = z[3];
+      if (fhs.length > 1 && f.zflavor) fhs[fhs.length - 1].textContent = f.zflavor;
     });
   }
 
@@ -5740,9 +5809,8 @@
     for (var i = 0; i < nodes.length; i++) {
       var tn = nodes[i];
       if (!isTypeLine(tn.nodeValue)) continue;
-      if (DBG.on) { DBG.type++; DBG.last = '类型行: ' + tn.nodeValue.trim().slice(0, 40); DBG.show(); }
+      if (DBG.on) { DBG.type++; DBG.show(); }
 
-      // 往上找容器：最多 4 层，要求容器里还有别的文字（卡名 + 规则文本）
       var box = tn.parentNode;
       for (var up = 0; up < 4 && box && box.parentNode; up++) {
         if (box.textContent && box.textContent.trim().length > tn.nodeValue.trim().length + 24) break;
@@ -5756,7 +5824,6 @@
       var idx = inner.indexOf(tn);
       if (idx <= 0) continue;
 
-      // 卡名：类型行之前最近的一段短文本
       var nameNode = null;
       for (var k = idx - 1; k >= 0; k--) {
         var t = inner[k].nodeValue.trim();
@@ -5769,20 +5836,7 @@
       var en = nameNode.nodeValue.trim();
       if (/[\u4e00-\u9fff]/.test(en)) continue;
 
-      // 规则文本：类型行之后最长的一段；只有当它覆盖了绝大部分文本时才整体替换，
-      // 否则（被符号/段落拆碎）只换卡名与类型行，避免出现中英重复
-      var oracleNode = null;
-      var best = 0;
-      var total = 0;
-      for (var m = idx + 1; m < inner.length; m++) {
-        var tt = inner[m].nodeValue.trim();
-        if (tt.length >= 8) total += tt.length;                       // 力量/防御这类短串不计入
-        if (tt.length > best && tt.length >= 8) { best = tt.length; oracleNode = inner[m]; }
-      }
-      if (best && total && best / total < 0.85) oracleNode = null;
-
-      // 规则文本块：优先取「类型行元素的下一块」——卡面排版里它总是紧跟类型行，
-      // 且里面可能夹着 {T}{G} 符号元素，整体替换才能保住图形
+      // 规则文本块：类型行元素的下一块（可能夹着符号元素）
       var oracleEl = null;
       var tlEl = tn.parentNode;
       if (tlEl && tlEl.nodeType === 1 && tlEl.nextElementSibling) {
@@ -5790,36 +5844,29 @@
         var st = (sib.textContent || '').replace(/\s+/g, ' ').trim();
         if (st && st.length < 600 && !/^\d+\s*\/\s*\d+$/.test(st) && !isTypeLine(st)) oracleEl = sib;
       }
-      if (!oracleEl && oracleNode && oracleNode.parentNode && oracleNode.parentNode.nodeType === 1) {
-        var pe = oracleNode.parentNode;
-        var restLen = (pe.textContent || '').trim().length - oracleNode.nodeValue.trim().length;
-        if (restLen >= 0 && restLen < 12 && pe.children && pe.children.length) oracleEl = pe;
-      }
 
       if (CARD_SEEN) CARD_SEEN.add(box);
       box.setAttribute(CARD_MARK, '1');
 
-      (function (bz, nn, tl, oe, oeEl) {
+      (function (bz, nn, tl, oe) {
         var key = (nn.nodeValue || '').trim();
-        cardZh(key).then(function (z) {
-          if (!z) return;
-          if (nn.nodeValue) nn.nodeValue = z[0];
-          if (tl && z[1]) tl.nodeValue = z[1];
-          if (z[2] && (oeEl || oe)) {
-            try {
-              if (oeEl) setRichText(oeEl, z[2]);
-              else writeInline(oe, z[2]);
-            } catch (e) {}
-          }
-          if (window.__eszhDebug) console.log('[eszh] 卡面命中', key, z[0]);
+        var typeTxt = (tl.nodeValue || '').trim();
+        cardZh(key).then(function (faces) {
+          if (!faces) return;
+          var f = pickFace(faces, typeTxt, nn.nodeValue);
+          if (!f || !f.zh) return;
+          nn.nodeValue = f.zh;
+          if (tl && f.ztype) tl.nodeValue = f.ztype;
+          if (oe && f.ztext) setRichText(oe, f.ztext);
         });
-      })(box, nameNode, tn, oracleNode, oracleEl);
+      })(box, nameNode, tn, oracleEl);
     }
   }
 
   function cardPass(root) {
     if (!root || root.nodeType !== 1) return;
     if (!DBG.on && !DBG.el) DBG.init();
+
     var boxes = [];
     try {
       if (root.matches && root.matches('.es-ct')) boxes.push(root);
