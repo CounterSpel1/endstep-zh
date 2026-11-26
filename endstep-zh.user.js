@@ -2,7 +2,7 @@
 // @name         Endstep 汉化
 // @name:en      Endstep Chinese Localization
 // @namespace    https://endstep.cc/
-// @version      1.0.1
+// @version      1.0.2
 // @description  把 endstep.cc 的界面与卡面文字汉化为简体中文
 // @match        https://endstep.cc/*
 // @match        https://*.endstep.cc/*
@@ -5470,7 +5470,7 @@
     return null;
   }
 
-  try { window.__eszhVer = '1.0.1'; } catch (e) {}
+  try { window.__eszhVer = '1.0.2'; } catch (e) {}
 
   /* ------------------- 卡面词典（Scryfall 中文印刷版） ------------------- */
 
@@ -5650,41 +5650,25 @@
       .replace(/\boc([A-Z0-9])\b/g, '{$1}');
   }
 
-  // 法术力符号：站点用的是 mana-font，写法是 <i class="ms ms-t"></i>
-  // 不要克隆原文的符号节点（会带出 o/c 之类的残字），按代码新建才是对的
-  var MS_ALIAS = { '∞': 'inf', '½': 'h', '½': 'h' };
-
-  function manaEl(code, tpl) {
-    var raw = String(code).replace(/[{}]/g, '').trim();
-    var key = MS_ALIAS[raw] || raw.toUpperCase().replace(/[\/]/g, '').toLowerCase();
-    var el;
-    if (tpl && tpl.cloneNode) {
-      el = tpl.cloneNode(false);
-      var cls = tpl.className || 'ms';
-      var swapped = cls.replace(/\bms-[a-z0-9-]+\b/i, 'ms-' + key);
-      el.className = swapped === cls && cls.indexOf('ms-' + key) < 0 ? cls + ' ms-' + key : swapped;
-    } else {
-      el = document.createElement('i');
-      el.className = 'ms ms-' + key + ' leading-none';
-      el.setAttribute('aria-hidden', 'true');
-    }
-    el.textContent = '';
-    return el;
-  }
-
-  // 把中文逐段写回，{T}{G} 这类符号一律按 mana-font 重建
+  // 把中文逐段写回；{T}{G} 这类符号复用原文已渲染好的符号节点（按顺序一一对应）
   function setRichText(el, text) {
     text = fixText(text);
-    var tpl = null;
-    try { tpl = el.querySelector('[class*="ms-"], [class*="mana"]'); } catch (e) {}
+    var syms = [];
+    try {
+      syms = Array.prototype.slice.call(
+        el.querySelectorAll('svg, img, [class*="mana"], [class*="sym"], [class*="ms-"]')
+      );
+    } catch (e) {}
 
     var frag = document.createDocumentFragment();
+    var idx = 0;
     var parts = text.split(/(\{[^}]{1,16}\})/);
     for (var i = 0; i < parts.length; i++) {
       var seg = parts[i];
       if (!seg) continue;
-      if (/^\{[^}]{1,16}\}$/.test(seg)) {
-        frag.appendChild(manaEl(seg.slice(1, -1), tpl));
+      if (/^\{[^}]{1,16}\}$/.test(seg) && syms[idx]) {
+        frag.appendChild(syms[idx].cloneNode(true));
+        idx++;
         continue;
       }
       var lines = seg.split('\n');
