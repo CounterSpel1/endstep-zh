@@ -2,7 +2,7 @@
 // @name         Endstep 汉化
 // @name:en      Endstep Chinese Localization
 // @namespace    https://endstep.cc/
-// @version      1.3.5
+// @version      1.4.0
 // @description  把 endstep.cc 的界面与卡面文字汉化为简体中文
 // @match        https://endstep.cc/*
 // @match        https://*.endstep.cc/*
@@ -5535,7 +5535,7 @@
     return null;
   }
 
-  try { window.__eszhVer = '1.3.5'; } catch (e) {}
+  try { window.__eszhVer = '1.4.0'; } catch (e) {}
 
   /* ------------------- 卡面词典（mtgch 中文 / Scryfall 兜底） ------------------- */
 
@@ -5739,40 +5739,21 @@
     return p;
   }
 
-  // 挑「当前这一面」：类型行 > 正文前缀 > 面名
-  // 类型行紧挨着正文，来自同一面，最不容易被卡图里的另一面干扰
-  function pickFace(faces, typeText, nameText, bodyText) {
+  /* 双面牌的处理约定：只翻正面。
+   * 类型行是同一段文字的兄弟节点，用它判断这一段属于哪一面：
+   *   - 属于正面 → 用正面译文
+   *   - 属于其他面 → 返回 null，保持英文（不猜、不混排） */
+  function pickFace(faces, typeText) {
     if (!faces || !faces.length) return null;
-    if (faces.length === 1) return faces[0];
+    if (faces.length === 1) return faces[0].zh ? faces[0] : null;
 
     var want = normType(typeText);
     if (want) {
-      for (var i = 0; i < faces.length; i++) {
-        if (normType(faces[i].type) === want && faces[i].zh) return faces[i];
+      for (var i = 1; i < faces.length; i++) {
+        if (normType(faces[i].type) === want) return null; // 背面/其他面：不翻
       }
     }
-
-    var body = String(bodyText || '').replace(/\s+/g, ' ').trim().toLowerCase();
-    if (body.length >= 12) {
-      var bestFace = null, bestLen = 0;
-      for (var b = 0; b < faces.length; b++) {
-        var et = (faces[b].enText || '').toLowerCase();
-        if (!et) continue;
-        var n = 0;
-        while (n < et.length && n < body.length && et.charAt(n) === body.charAt(n)) n++;
-        if (n > bestLen && n >= 8) { bestLen = n; bestFace = faces[b]; }
-      }
-      if (bestFace && bestFace.zh) return bestFace;
-    }
-
-    var title = String(nameText || '').trim().toLowerCase();
-    if (title) {
-      for (var j = 0; j < faces.length; j++) {
-        if ((faces[j].en || '').toLowerCase() === title && faces[j].zh) return faces[j];
-      }
-    }
-    for (var k = 0; k < faces.length; k++) if (faces[k].zh) return faces[k];
-    return faces[0];
+    return faces[0].zh ? faces[0] : null;
   }
 
   // 接口偶尔把换行转义成字面量「\n」（两个字符），且个别卡把 {T} 存成 ocT
@@ -5931,7 +5912,7 @@
       }
       var hit = findFaceNameNode(box, faces);
       var bodyTxt = oeEl ? oeEl.textContent : '';
-      var f = pickFace(faces, tlEl && tlEl.textContent, nameEl.textContent, bodyTxt);
+      var f = pickFace(faces, tlEl && tlEl.textContent);
       if (DBG.on) {
         DBG.last = '卡面 ' + en + ' ｜面 ' + (hit ? hit.index : '-') + '/' + faces.length +
           ' ｜title=' + String(hit ? hit.node.nodeValue : nameEl.textContent).slice(0, 18) +
@@ -6069,7 +6050,7 @@
           if (!faces) return;
           var hit = findFaceNameNode(bz, faces);
           var bodyTxt = oe ? oe.textContent : '';
-          var f = pickFace(faces, typeTxt, nn.nodeValue, bodyTxt);
+          var f = pickFace(faces, typeTxt);
           if (DBG.on) {
             DBG.last = '结构 ' + key + ' ｜面 ' + (f ? faces.indexOf(f) : '-') + '/' + faces.length +
               ' ｜title=' + String(hit ? hit.node.nodeValue : nn.nodeValue).slice(0, 16) +
