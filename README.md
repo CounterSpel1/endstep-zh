@@ -18,10 +18,9 @@
 
 ## 安装
 
-1. 浏览器安装 **Tampermonkey**（Chrome / Edge / Firefox 均有官方扩展）
-2. 打开本仓库的 `endstep-zh.user.js`，点右上角 **Raw**，Tampermonkey 会弹出安装页
-3. 点「安装」；弹出跨域请求提示时**请允许**（用于查询中文卡牌数据）
-4. 打开 endstep.cc，刷新一次
+**👉 [点这里一键安装](https://raw.githubusercontent.com/CounterSpel1/endstep-zh/main/endstep-zh.user.js)**
+
+详细步骤、镜像地址、更新与卸载说明见 [INSTALL.md](INSTALL.md)。
 
 装好后可以在 Tampermonkey 面板查看版本号，用来确认是否装上了最新版。
 

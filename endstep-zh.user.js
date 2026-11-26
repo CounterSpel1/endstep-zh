@@ -4,6 +4,8 @@
 // @namespace    https://endstep.cc/
 // @version      1.4.1
 // @description  把 endstep.cc 的界面与卡面文字汉化为简体中文
+// @downloadURL  https://raw.githubusercontent.com/CounterSpel1/endstep-zh/main/endstep-zh.user.js
+// @updateURL    https://raw.githubusercontent.com/CounterSpel1/endstep-zh/main/endstep-zh.user.js
 // @match        https://endstep.cc/*
 // @match        https://*.endstep.cc/*
 // @run-at       document-start
