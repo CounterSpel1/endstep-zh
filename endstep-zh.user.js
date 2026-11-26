@@ -2,7 +2,7 @@
 // @name         Endstep 汉化
 // @name:en      Endstep Chinese Localization
 // @namespace    https://endstep.cc/
-// @version      1.3.2
+// @version      1.3.3
 // @description  把 endstep.cc 的界面与卡面文字汉化为简体中文
 // @match        https://endstep.cc/*
 // @match        https://*.endstep.cc/*
@@ -5535,7 +5535,7 @@
     return null;
   }
 
-  try { window.__eszhVer = '1.3.2'; } catch (e) {}
+  try { window.__eszhVer = '1.3.3'; } catch (e) {}
 
   /* ------------------- 卡面词典（mtgch 中文 / Scryfall 兜底） ------------------- */
 
@@ -5738,12 +5738,19 @@
     return p;
   }
 
-  // 按页面上的类型行挑出「当前这一面」
+  // 挑「当前这一面」：类型行 > 正文前缀 > 面名
+  // 类型行紧挨着正文，来自同一面，最不容易被卡图里的另一面干扰
   function pickFace(faces, typeText, nameText, bodyText) {
     if (!faces || !faces.length) return null;
     if (faces.length === 1) return faces[0];
 
-    // ① 用页面上的英文规则文本前缀比对，最可靠
+    var want = normType(typeText);
+    if (want) {
+      for (var i = 0; i < faces.length; i++) {
+        if (normType(faces[i].type) === want && faces[i].zh) return faces[i];
+      }
+    }
+
     var body = String(bodyText || '').replace(/\s+/g, ' ').trim().toLowerCase();
     if (body.length >= 12) {
       var bestFace = null, bestLen = 0;
@@ -5756,12 +5763,7 @@
       }
       if (bestFace && bestFace.zh) return bestFace;
     }
-    var want = normType(typeText);
-    if (want) {
-      for (var i = 0; i < faces.length; i++) {
-        if (normType(faces[i].type) === want && faces[i].zh) return faces[i];
-      }
-    }
+
     var title = String(nameText || '').trim().toLowerCase();
     if (title) {
       for (var j = 0; j < faces.length; j++) {
@@ -5928,7 +5930,7 @@
       }
       var hit = findFaceNameNode(box, faces);
       var bodyTxt = oeEl ? oeEl.textContent : '';
-      var f = hit ? faces[hit.index] : pickFace(faces, tlEl && tlEl.textContent, nameEl.textContent, bodyTxt);
+      var f = pickFace(faces, tlEl && tlEl.textContent, nameEl.textContent, bodyTxt);
       if (DBG.on) {
         DBG.last = '卡面 ' + en + ' ｜面 ' + (hit ? hit.index : '-') + '/' + faces.length +
           ' ｜title=' + String(hit ? hit.node.nodeValue : nameEl.textContent).slice(0, 18) +
@@ -5938,8 +5940,9 @@
         DBG.show();
       }
       if (!f || !f.zh) return;
-      if (hit) { hit.node.nodeValue = f.zh; }
-      else if (nameEl.parentNode) nameEl.textContent = f.zh;
+      // 标题：优先改「可见且字号最大的面名节点」，再把 b 也一并改掉
+      if (hit && hit.node.nodeValue !== f.zh) hit.node.nodeValue = f.zh;
+      if (nameEl.parentNode && nameEl.textContent !== f.zh) nameEl.textContent = f.zh;
       if (tlEl && f.ztype) tlEl.textContent = f.ztype;
       if (oeEl && f.ztext) setRichText(oeEl, f.ztext);
       var fhs = box.querySelectorAll('[class*="es-ct-fh"]');
@@ -5950,7 +5953,7 @@
   /* ---- 结构启发：不认类名，靠「类型行」这个排版特征定位卡面 ---- */
 
   var TYPE_RE = /^(?:(?:Basic|Snow|Legendary|World|Ongoing|Elite|Host|Token)\s+)*(Instant|Sorcery|Enchantment|Artifact|Creature|Land|Planeswalker|Battle|Tribal|Conspiracy|Scheme|Vanguard|Phenomenon|Plane|Dungeon)\b/i;
-  var CARD_SEEN = typeof WeakSet === 'function' ? new WeakSet() : null;
+  var TYPE_SEEN = typeof WeakSet === 'function' ? new WeakSet() : null;
 
   function isTypeLine(text) {
     var t = (text || '').trim();
@@ -5983,19 +5986,34 @@
         box = box.parentNode;
       }
       if (!box || box.nodeType !== 1) continue;
-      if (CARD_SEEN && CARD_SEEN.has(box)) continue;
+      if (TYPE_SEEN && TYPE_SEEN.has(tn)) continue;
 
       var inner = [];
       textNodesIn(box, inner, 60);
       var idx = inner.indexOf(tn);
       if (idx <= 0) continue;
 
+      // 卡名只在「类型行的前一个兄弟块」里找，避免抓到另一面的名字
       var nameNode = null;
-      for (var k = idx - 1; k >= 0; k--) {
-        var t = inner[k].nodeValue.trim();
-        if (t.length && t.length <= 80 && /[A-Za-z]{2}/.test(t) && !/^\{|^\d+\s*\/\s*\d+$/.test(t)) {
-          nameNode = inner[k];
-          break;
+      var scope = tn.parentNode && tn.parentNode.previousElementSibling;
+      if (scope) {
+        var scoped = [];
+        textNodesIn(scope, scoped, 20);
+        for (var q = scoped.length - 1; q >= 0; q--) {
+          var qt = scoped[q].nodeValue.trim();
+          if (qt.length && qt.length <= 80 && /[A-Za-z]{2}/.test(qt) && !/^\{|^\d+\s*\/\s*\d+$/.test(qt)) {
+            nameNode = scoped[q];
+            break;
+          }
+        }
+      }
+      if (!nameNode) {
+        for (var k = idx - 1; k >= 0; k--) {
+          var t = inner[k].nodeValue.trim();
+          if (t.length && t.length <= 80 && /[A-Za-z]{2}/.test(t) && !/^\{|^\d+\s*\/\s*\d+$/.test(t)) {
+            nameNode = inner[k];
+            break;
+          }
         }
       }
       if (!nameNode) continue;
@@ -6011,8 +6029,7 @@
         if (st && st.length < 600 && !/^\d+\s*\/\s*\d+$/.test(st) && !isTypeLine(st)) oracleEl = sib;
       }
 
-      if (CARD_SEEN) CARD_SEEN.add(box);
-      box.setAttribute(CARD_MARK, '1');
+      if (TYPE_SEEN) TYPE_SEEN.add(tn);
 
       (function (bz, nn, tl, oe) {
         var key = (nn.nodeValue || '').trim();
@@ -6021,9 +6038,10 @@
           if (!faces) return;
           var hit = findFaceNameNode(bz, faces);
           var bodyTxt = oe ? oe.textContent : '';
-          var f = hit ? faces[hit.index] : pickFace(faces, typeTxt, nn.nodeValue, bodyTxt);
+          var f = pickFace(faces, typeTxt, nn.nodeValue, bodyTxt);
           if (!f || !f.zh) return;
-          (hit ? hit.node : nn).nodeValue = f.zh;
+          if (hit && hit.node.nodeValue !== f.zh) hit.node.nodeValue = f.zh;
+          if (nn.nodeValue !== f.zh) nn.nodeValue = f.zh;
           if (tl && f.ztype) tl.nodeValue = f.ztype;
           if (oe && f.ztext) setRichText(oe, f.ztext);
         });
