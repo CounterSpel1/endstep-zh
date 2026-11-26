@@ -2,7 +2,7 @@
 // @name         Endstep 汉化
 // @name:en      Endstep Chinese Localization
 // @namespace    https://endstep.cc/
-// @version      1.3.0
+// @version      1.3.1
 // @description  把 endstep.cc 的界面与卡面文字汉化为简体中文
 // @match        https://endstep.cc/*
 // @match        https://*.endstep.cc/*
@@ -5535,7 +5535,7 @@
     return null;
   }
 
-  try { window.__eszhVer = '1.3.0'; } catch (e) {}
+  try { window.__eszhVer = '1.3.1'; } catch (e) {}
 
   /* ------------------- 卡面词典（mtgch 中文 / Scryfall 兜底） ------------------- */
 
@@ -5765,7 +5765,16 @@
       .replace(/\\t/g, ' ')
       .replace(/\\'/g, "'")
       .replace(/\\"/g, '"')
-      .replace(/\boc([A-Z0-9])\b/g, '{$1}');
+      .replace(/\boc([A-Z0-9])\b/g, '{$1}')
+      .replace(/\bo([0-9])\b/g, '{$1}')
+      // 个别卡把费用写成「～一绿」这类中文，还原成法术力符号
+      .replace(/([～~—–-])\s*([0-9一二三四五六七八九十]+)\s*([白蓝黑红绿])/g,
+        function (_, dash, num, color) {
+          var cn = { '一': '1', '二': '2', '两': '2', '三': '3', '四': '4', '五': '5', '六': '6', '七': '7', '八': '8', '九': '9', '十': '10' };
+          var col = { '白': 'W', '蓝': 'U', '黑': 'B', '红': 'R', '绿': 'G' }[color];
+          var n = cn[num] || num;
+          return dash + '{' + n + '}{' + col + '}';
+        });
   }
 
   /* 法术力符号：不依赖 mana-font，也不克隆原文节点——
@@ -5854,6 +5863,27 @@
     if (node.parentNode) node.parentNode.replaceChild(frag, node);
   }
 
+  // 容器里出现多个面名时，用字号最大的那个判断当前显示的是哪一面
+  function findFaceNameNode(box, faces) {
+    var idxBy = Object.create(null);
+    for (var i = 0; i < faces.length; i++) {
+      if (faces[i].en) idxBy[faces[i].en.toLowerCase()] = i;
+    }
+    var nodes = [];
+    textNodesIn(box, nodes, 80);
+    var best = null, bestSize = -1, bestIdx = -1;
+    for (var k = 0; k < nodes.length; k++) {
+      var t = (nodes[k].nodeValue || '').trim().toLowerCase();
+      if (!(t in idxBy)) continue;
+      var host = nodes[k].parentNode;
+      if (!host || host.nodeType !== 1) host = box;
+      var size = 0;
+      try { size = parseFloat(window.getComputedStyle(host).fontSize) || 0; } catch (e) {}
+      if (size > bestSize) { best = nodes[k]; bestSize = size; bestIdx = idxBy[t]; }
+    }
+    return best ? { node: best, index: bestIdx } : null;
+  }
+
   function applyOneCard(box) {
     if (!box || box.getAttribute(CARD_MARK)) return;
     var nameEl = box.querySelector('b');
@@ -5877,9 +5907,11 @@
         }
         return;
       }
-      var f = pickFace(faces, tlEl && tlEl.textContent, nameEl.textContent);
+      var hit = findFaceNameNode(box, faces);
+      var f = hit ? faces[hit.index] : pickFace(faces, tlEl && tlEl.textContent, nameEl.textContent);
       if (!f || !f.zh) return;
-      if (nameEl.parentNode) nameEl.textContent = f.zh;
+      if (hit) { hit.node.nodeValue = f.zh; }
+      else if (nameEl.parentNode) nameEl.textContent = f.zh;
       if (tlEl && f.ztype) tlEl.textContent = f.ztype;
       if (oeEl && f.ztext) setRichText(oeEl, f.ztext);
       var fhs = box.querySelectorAll('[class*="es-ct-fh"]');
@@ -5959,9 +5991,10 @@
         var typeTxt = (tl.nodeValue || '').trim();
         cardZh(key).then(function (faces) {
           if (!faces) return;
-          var f = pickFace(faces, typeTxt, nn.nodeValue);
+          var hit = findFaceNameNode(bz, faces);
+          var f = hit ? faces[hit.index] : pickFace(faces, typeTxt, nn.nodeValue);
           if (!f || !f.zh) return;
-          nn.nodeValue = f.zh;
+          (hit ? hit.node : nn).nodeValue = f.zh;
           if (tl && f.ztype) tl.nodeValue = f.ztype;
           if (oe && f.ztext) setRichText(oe, f.ztext);
         });
