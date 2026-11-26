@@ -2,7 +2,7 @@
 // @name         Endstep 汉化
 // @name:en      Endstep Chinese Localization
 // @namespace    https://endstep.cc/
-// @version      1.4.0
+// @version      1.4.1
 // @description  把 endstep.cc 的界面与卡面文字汉化为简体中文
 // @match        https://endstep.cc/*
 // @match        https://*.endstep.cc/*
@@ -5535,7 +5535,7 @@
     return null;
   }
 
-  try { window.__eszhVer = '1.4.0'; } catch (e) {}
+  try { window.__eszhVer = '1.4.1'; } catch (e) {}
 
   /* ------------------- 卡面词典（mtgch 中文 / Scryfall 兜底） ------------------- */
 
@@ -5739,20 +5739,11 @@
     return p;
   }
 
-  /* 双面牌的处理约定：只翻正面。
-   * 类型行是同一段文字的兄弟节点，用它判断这一段属于哪一面：
-   *   - 属于正面 → 用正面译文
-   *   - 属于其他面 → 返回 null，保持英文（不猜、不混排） */
-  function pickFace(faces, typeText) {
+  /* 双面 / 预兆 / 分卡：一律不翻，保持英文原样。
+   * 这类牌两面文字共用一段区域，翻一面就会和另一面混排，不如整体不动。 */
+  function pickFace(faces) {
     if (!faces || !faces.length) return null;
-    if (faces.length === 1) return faces[0].zh ? faces[0] : null;
-
-    var want = normType(typeText);
-    if (want) {
-      for (var i = 1; i < faces.length; i++) {
-        if (normType(faces[i].type) === want) return null; // 背面/其他面：不翻
-      }
-    }
+    if (faces.length > 1) return null;
     return faces[0].zh ? faces[0] : null;
   }
 
@@ -5912,7 +5903,7 @@
       }
       var hit = findFaceNameNode(box, faces);
       var bodyTxt = oeEl ? oeEl.textContent : '';
-      var f = pickFace(faces, tlEl && tlEl.textContent);
+      var f = pickFace(faces);
       if (DBG.on) {
         DBG.last = '卡面 ' + en + ' ｜面 ' + (hit ? hit.index : '-') + '/' + faces.length +
           ' ｜title=' + String(hit ? hit.node.nodeValue : nameEl.textContent).slice(0, 18) +
@@ -6050,7 +6041,7 @@
           if (!faces) return;
           var hit = findFaceNameNode(bz, faces);
           var bodyTxt = oe ? oe.textContent : '';
-          var f = pickFace(faces, typeTxt);
+          var f = pickFace(faces);
           if (DBG.on) {
             DBG.last = '结构 ' + key + ' ｜面 ' + (f ? faces.indexOf(f) : '-') + '/' + faces.length +
               ' ｜title=' + String(hit ? hit.node.nodeValue : nn.nodeValue).slice(0, 16) +
